@@ -1,99 +1,138 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Panel - Withdrawal Requests</title>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; color: #333; }
-        .container { max-width: 1200px; margin: 20px auto; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { text-align: center; color: #1a73e8; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 12px 15px; border: 1px solid #ddd; text-align: left; }
-        th { background-color: #1a73e8; color: #fff; }
-        tr:nth-child(even) { background-color: #f8f9fa; }
-        .status-pending { color: #ff9800; font-weight: bold; }
-        .status-completed { color: #4caf50; font-weight: bold; }
-        .status-rejected { color: #f44336; font-weight: bold; }
-        button { padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; color: white; font-size: 14px; }
-        .complete-btn { background-color: #4caf50; }
-        .reject-btn { background-color: #f44336; margin-left: 5px; }
+        body { font-family: sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; }
+        .tabs { display: flex; border-bottom: 2px solid #ccc; margin-bottom: 20px; }
+        .tab-button { padding: 10px 20px; cursor: pointer; border: none; background-color: transparent; font-size: 16px; }
+        .tab-button.active { border-bottom: 2px solid #007bff; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+        th { background-color: #f2f2f2; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .actions button { padding: 6px 12px; border: none; border-radius: 4px; color: white; cursor: pointer; margin-right: 5px; }
+        .btn-success { background-color: #28a745; }
+        .btn-danger { background-color: #dc3545; }
+        .status-pending { color: #ffc107; font-weight: bold; }
+        .status-paid { color: #28a745; font-weight: bold; }
+        .status-rejected { color: #dc3545; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>অর্থ উত্তোলনের অনুরোধসমূহ</h1>
+        <h1>Withdrawal Requests</h1>
+        <div class="tabs">
+            <button class="tab-button active" onclick="loadRequests('pending')">Pending</button>
+            <button class="tab-button" onclick="loadRequests('paid')">Paid</button>
+            <button class="tab-button" onclick="loadRequests('rejected')">Rejected</button>
+        </div>
         <table>
             <thead>
                 <tr>
-                    <th>অনুরোধ আইডি</th>
-                    <th>ব্যবহারকারীর নাম</th>
-                    <th>ব্যবহারকারী আইডি</th>
-                    <th>টাকার পরিমাণ</th>
-                    <th>পেমেন্ট মাধ্যম</th>
-                    <th>ফোন নম্বর</th>
-                    <th>সময়</th>
-                    <th>স্ট্যাটাস</th>
-                    <th>কার্যক্রম</th>
+                    <th>Date</th>
+                    <th>User Name</th>
+                    <th>User ID</th>
+                    <th>Amount (Taka)</th>
+                    <th>Method</th>
+                    <th>Phone</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
-            <tbody id="requests-tbody">
-                <!-- Data will be loaded here -->
+            <tbody id="requests-table-body">
+                <!-- Data will be loaded here by JavaScript -->
             </tbody>
         </table>
     </div>
 
-    <script>
-        // --- Firebase Configuration (use the same as user file) ---
-        const firebaseConfig = {
-            apiKey: "YOUR_FIREBASE_API_KEY",
-            // ... other config details ...
-        };
+<script>
+    // গুরুত্বপূর্ণ: আপনার Firebase কনফিগারেশন এখানে যোগ করুন (ইউজার ফাইলের মতোই)
+    const firebaseConfig = {
+      apiKey: "AIzaSyDvYw3r0c8yJeaMi5vZrC9zLfZVwHoKrxs",
+      authDomain: "monetag-9bccb.firebaseapp.com",
+      projectId: "monetag-9bccb",
+      storageBucket: "monetag-9bccb.firebasestorage.app",
+      messagingSenderId: "536808480299",
+      appId: "1:536808480299:web:1ad92d3db227afc00c546e"
+    };
 
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-        const requestsTbody = document.getElementById('requests-tbody');
+    let currentStatus = 'pending';
 
-        // Load withdrawal requests from Firebase
-        const withdrawalsRef = database.ref('withdrawals').orderByChild('timestamp');
-        withdrawalsRef.on('value', (snapshot) => {
-            requestsTbody.innerHTML = ''; // Clear existing data
-            snapshot.forEach((childSnapshot) => {
-                const key = childSnapshot.key;
-                const request = childSnapshot.val();
+    function loadRequests(status) {
+        currentStatus = status;
+        // Update active tab UI
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`.tab-button[onclick="loadRequests('${status}')"]`).classList.add('active');
+
+        const tableBody = document.getElementById('requests-table-body');
+        tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Loading...</td></tr>';
+        
+        db.collection("withdrawals")
+          .where("status", "==", status)
+          .orderBy("requestedAt", "desc")
+          .onSnapshot((querySnapshot) => {
+            tableBody.innerHTML = ''; // Clear previous data
+            if (querySnapshot.empty) {
+                tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center;">No ${status} requests found.</td></tr>`;
+                return;
+            }
+            querySnapshot.forEach((doc) => {
+                const request = doc.data();
+                const requestId = doc.id;
                 
                 const row = document.createElement('tr');
+                
+                // Format date
+                const date = request.requestedAt ? request.requestedAt.toDate().toLocaleString() : 'N/A';
+                
                 row.innerHTML = `
-                    <td>${key}</td>
-                    <td>${request.userName || 'N/A'}</td>
+                    <td>${date}</td>
+                    <td>${request.userName}</td>
                     <td>${request.userId}</td>
-                    <td>${request.amount} Taka</td>
-                    <td>${request.paymentMethod}</td>
-                    <td>${request.phoneNumber}</td>
-                    <td>${new Date(request.timestamp).toLocaleString('bn-BD')}</td>
-                    <td class="status-${request.status}">${request.status}</td>
-                    <td>
-                        <button class="complete-btn" onclick="updateStatus('${key}', 'completed')">সম্পন্ন</button>
-                        <button class="reject-btn" onclick="updateStatus('${key}', 'rejected')">বাতিল</button>
+                    <td>${request.amount.toFixed(2)}</td>
+                    <td>${request.method.toUpperCase()}</td>
+                    <td>${request.phone}</td>
+                    <td><span class="status-${request.status}">${request.status}</span></td>
+                    <td class="actions">
+                        ${request.status === 'pending' ? `
+                            <button class="btn-success" onclick="updateStatus('${requestId}', 'paid')">Paid</button>
+                            <button class="btn-danger" onclick="updateStatus('${requestId}', 'rejected')">Reject</button>
+                        ` : 'Completed'}
                     </td>
                 `;
-                requestsTbody.prepend(row); // Show newest requests first
+                tableBody.appendChild(row);
             });
         });
+    }
 
-        // Function to update the status of a request
-        function updateStatus(key, newStatus) {
-            if (confirm(`আপনি কি এই অনুরোধটির স্ট্যাটাস পরিবর্তন করতে নিশ্চিত?`)) {
-                database.ref('withdrawals/' + key).update({
-                    status: newStatus
-                });
-            }
+    function updateStatus(docId, newStatus) {
+        if (!confirm(`Are you sure you want to mark this request as ${newStatus}?`)) {
+            return;
         }
-    </script>
+        db.collection("withdrawals").doc(docId).update({
+            status: newStatus
+        }).then(() => {
+            console.log(`Request ${docId} updated to ${newStatus}`);
+            // The onSnapshot listener will automatically refresh the table
+        }).catch((error) => {
+            console.error("Error updating document: ", error);
+            alert("Failed to update status.");
+        });
+    }
+    
+    // Load pending requests by default when page opens
+    window.onload = () => loadRequests('pending');
+</script>
 </body>
 </html>
